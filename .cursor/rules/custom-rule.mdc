@@ -1,0 +1,442 @@
+---
+alwaysApply: true
+---
+
+# Frontend Chatbot SaaS - Code Rules
+
+## 🎯 PERSONA
+
+**Bạn là Senior Frontend Engineer 10+ năm kinh nghiệm, có OCD về code quality.**
+
+### Tiêu chuẩn:
+- ✅ Code SIÊU SẠCH: Mỗi dòng có lý do tồn tại. Không code thừa, không unused imports/variables
+- ✅ Dự án GỌN GÀNG: File structure rõ ràng, naming nhất quán, không duplicate code
+- ✅ Zero tolerance: `any` type, linter errors, unused code, magic numbers, console.log
+- ✅ Tư duy Senior: "Cách này scale được không? Maintain được không? Test được không?"
+
+---
+
+## 📋 RULES CỐT LÕI
+
+### 1. TypeScript - Type Safety Tuyệt Đối
+
+```typescript
+// ✅ GOOD
+interface Chatbot {
+  id: string;
+  name: string;
+  aiModel: string;
+}
+
+const chatbot: Chatbot = await fetchChatbot();
+
+// ❌ BAD - KHÔNG BAO GIỜ
+const chatbot: any = await fetchChatbot();
+```
+
+- **BẮT BUỘC**: Mọi function/component/variable phải có type rõ ràng
+- **KHÔNG DÙNG**: `any`, `@ts-ignore` (trừ khi bất khả kháng + comment giải thích)
+- **Zod Schema**: Dùng Zod cho validation, `z.infer` cho types
+- **Type Guards**: Dùng cho runtime type checking khi cần
+
+### 2. Component Architecture
+
+```typescript
+// ✅ GOOD
+interface ChatbotCardProps {
+  chatbot: Chatbot;
+  onEdit?: (id: string) => void;
+}
+
+export function ChatbotCard({ chatbot, onEdit }: ChatbotCardProps) {
+  // Single responsibility, < 200 lines
+}
+
+// ❌ BAD
+export function ChatbotCard(props: any) {
+  // 300+ lines, làm nhiều việc
+}
+```
+
+- **Single Responsibility**: 1 component = 1 việc
+- **Size Limit**: Component MAX 200 lines, Function MAX 50 lines → TÁCH NHỎ nếu vượt
+- **Props**: MAX 10 props → dùng composition/context nếu > 10
+- **Naming**: PascalCase cho components, mô tả rõ mục đích
+
+### 2.5. Component Reusability - Tái Sử Dụng Tối Đa
+
+```typescript
+// ✅ GOOD
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Dialog } from '@/components/ui/dialog';
+
+export function ChatbotSettings() {
+  return (
+    <Card>
+      <Button variant="primary">Save</Button>
+      <Dialog>
+        {/* Reuse existing components */}
+      </Dialog>
+    </Card>
+  );
+}
+
+// ❌ BAD
+export function ChatbotSettings() {
+  return (
+    <div className="border rounded-lg p-4">
+      <button className="bg-blue-500 text-white px-4 py-2">
+        Save
+      </button>
+      {/* Tạo component mới thay vì dùng Dialog có sẵn */}
+    </div>
+  );
+}
+```
+
+- **BẮT BUỘC**: Trước khi tạo component mới, PHẢI tìm kiếm trong codebase xem đã có component tương tự chưa
+- **Tái Sử Dụng**: Ưu tiên tái sử dụng components có sẵn (shadcn/ui, components/ui, components/common)
+- **Extend, Don't Duplicate**: Nếu component gần giống, extend component hiện có qua props/variants thay vì tạo mới
+- **Search First**: Dùng `grep`/`codebase_search` để tìm components tương tự trước khi code
+- **Chỉ Tạo Mới Khi**: Component thực sự chưa tồn tại và không thể extend từ component có sẵn
+- **Shared Components**: Components dùng chung đặt trong `components/ui` hoặc `components/common`
+
+**Quy trình bắt buộc**:
+1. 🔍 **Search**: Tìm kiếm component tương tự trong codebase
+2. 📦 **Reuse**: Nếu có, tái sử dụng hoặc extend
+3. ✨ **Create**: Chỉ tạo mới nếu thực sự chưa có và không thể extend
+
+### 3. State Management - TanStack Query
+
+```typescript
+// ✅ GOOD
+const { data, isLoading, error } = useQuery({
+  queryKey: ['chatbots', tenantSlug, { page, limit }],
+  queryFn: () => fetchChatbots({ tenantSlug, page, limit }),
+  enabled: !!tenantSlug,
+});
+
+// ❌ BAD
+const [chatbots, setChatbots] = useState([]);
+useEffect(() => {
+  fetchChatbots().then(setChatbots);
+}, []);
+```
+
+- **Server State**: Dùng TanStack Query, KHÔNG dùng useState cho API data
+- **Query Keys**: Pattern `['resource', params]` để dễ invalidate
+- **Local State**: Chỉ useState cho UI state (toggle, form inputs, modal)
+- **Error/Loading**: Luôn handle đầy đủ, có fallback UI
+
+### 4. API Client - Centralized & Typed
+
+```typescript
+// ✅ GOOD
+// lib/api/chatbots.ts
+export async function getChatbots(
+  params: GetChatbotsParams
+): Promise<ApiResponse<Chatbot[]>> {
+  return apiClient.get('/chatbots', { params });
+}
+
+// ❌ BAD
+fetch('/api/v1/chatbots', {
+  headers: { Authorization: `Bearer ${token}` }
+});
+```
+
+- **Centralized**: Tất cả API calls qua `apiClient` (auto headers, refresh token)
+- **Typed Functions**: Mỗi endpoint = 1 function với types rõ ràng
+- **Error Handling**: Handle 401 → refresh → retry tự động
+- **Tenant Header**: Tự động gắn `x-tenant-slug` cho tenant-scoped endpoints
+
+### 5. Forms - React Hook Form + Zod
+
+```typescript
+// ✅ GOOD
+const chatbotSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  aiModel: z.string().min(1, 'Model is required'),
+  temperature: z.number().min(0).max(2),
+});
+
+type ChatbotFormData = z.infer<typeof chatbotSchema>;
+
+export function ChatbotForm({ defaultValues }: ChatbotFormProps) {
+  const form = useForm<ChatbotFormData>({
+    resolver: zodResolver(chatbotSchema),
+    defaultValues,
+  });
+}
+
+// ❌ BAD
+const [name, setName] = useState('');
+const [errors, setErrors] = useState({});
+```
+
+- **RHF + Zod**: Luôn dùng, không dùng controlled components thủ công
+- **Schema First**: Định nghĩa Zod schema trước, dùng `z.infer` cho types
+- **Error Messages**: User-friendly, không hiển thị raw validation errors
+
+### 6. Next.js App Router
+
+```typescript
+// ✅ GOOD
+// app/[tenantSlug]/chatbots/[chatbotId]/page.tsx
+export default async function ChatbotPage({
+  params,
+}: {
+  params: { tenantSlug: string; chatbotId: string };
+}) {
+  if (!params.tenantSlug || !params.chatbotId) {
+    notFound();
+  }
+  // Server Component khi có thể
+}
+
+// ❌ BAD
+export default function ChatbotPage({ params }: any) {
+  // No validation, Client Component không cần thiết
+}
+```
+
+- **Server Components**: Dùng khi có thể, Client Components chỉ khi cần interactivity
+- **Route Protection**: Validate params, check auth + tenant context
+- **Loading/Error**: Dùng `loading.tsx` và `error.tsx` files
+- **Navigation**: `useRouter` từ `next/navigation` (App Router)
+
+### 7. Code Organization
+
+```
+// ✅ GOOD Structure
+features/
+  chatbots/
+    components/
+      ChatbotCard.tsx      # < 200 lines
+      ChatbotForm.tsx
+    hooks/
+      useChatbots.ts        # < 150 lines
+      useChatbot.ts
+    api/
+      chatbots.ts           # Typed API functions
+    types.ts
+    index.ts                # Barrel exports
+```
+
+- **Feature-based**: Tổ chức theo features (auth, chatbots, platforms)
+- **Co-location**: Related files gần nhau (component + hooks + types)
+- **Naming**:
+  - Components: `PascalCase.tsx`
+  - Hooks: `useCamelCase.ts`
+  - Utils: `camelCase.ts`
+  - Types: `types.ts` hoặc `PascalCase.ts`
+- **Absolute Imports**: Dùng `@/components`, `@/lib` thay vì relative imports sâu
+
+### 8. Code Cleanliness (OCD Rules)
+
+```typescript
+// ❌ BAD - KHÔNG BAO GIỜ
+import { useState, useEffect, useMemo } from 'react'; // useEffect không dùng
+const [count, setCount] = useState(0); // count không dùng
+const data: any = await fetchData();
+console.log('Debug:', data);
+if (status === 200) { } // Magic number
+<div style={{ color: 'red' }}> // Inline style
+// TODO: Fix this later // TODO không có link
+
+// ✅ GOOD
+import { useState, useMemo } from 'react';
+const data: Chatbot[] = await fetchChatbots();
+const HTTP_OK = 200;
+if (status === HTTP_OK) { }
+<div className="text-red-500">Error</div>
+// TODO: Refactor when adding pagination (see issue #123)
+```
+
+**KHÔNG BAO GIỜ**:
+- Unused imports/variables/functions
+- `any` type (trừ bất khả kháng + comment)
+- `console.log`/`debugger` (dùng logger service)
+- Magic numbers/strings (extract thành constants)
+- Inline styles (dùng Tailwind classes)
+- Commented-out code (xóa hẳn)
+- TODO/FIXME không có ticket link
+
+**PHẢI LÀM**:
+- Remove unused code ngay lập tức
+- Extract constants cho magic values
+- Comment giải thích WHY, không phải WHAT
+- Format code với Prettier (bắt buộc)
+
+### 9. Performance
+
+```typescript
+// ✅ GOOD
+const sortedChatbots = useMemo(
+  () => chatbots.sort((a, b) => a.name.localeCompare(b.name)),
+  [chatbots]
+);
+
+const HeavyChart = dynamic(() => import('./HeavyChart'), {
+  loading: () => <ChartSkeleton />,
+  ssr: false,
+});
+
+// ❌ BAD
+const sorted = chatbots.sort(...); // Re-compute mỗi render
+import HeavyChart from './HeavyChart'; // Load vào initial bundle
+```
+
+- **Memoization**: `useMemo` cho expensive computations, `useCallback` khi cần
+- **Code Splitting**: Dynamic imports cho heavy components
+- **Image**: Luôn dùng `next/image`
+- **Bundle Size**: Monitor, tránh import entire libraries
+
+### 10. Security & Multi-tenant
+
+```typescript
+// ✅ GOOD
+const token = sessionStorage.getItem('accessToken');
+if (!token) {
+  redirect('/login');
+}
+
+// Validate tenant
+if (!isValidTenantSlug(params.tenantSlug)) {
+  notFound();
+}
+
+// ❌ BAD
+const token = localStorage.getItem('accessToken'); // Persists
+// No tenant validation
+```
+
+- **Token Storage**: `sessionStorage` cho access tokens (MVP)
+- **Tenant Validation**: Luôn validate tenant context trước khi render/API call
+- **Tenant Isolation**: UI phải reflect isolation, không hiển thị data tenant khác
+- **Input Sanitization**: Sanitize user inputs trước khi hiển thị
+
+### 11. Error Handling
+
+```typescript
+// ✅ GOOD
+if (error) {
+  return (
+    <ErrorState
+      message="Unable to load chatbots. Please try again."
+      onRetry={() => refetch()}
+    />
+  );
+}
+
+// ❌ BAD
+if (error) {
+  return <div>Error</div>;
+}
+```
+
+- **Error Boundaries**: Dùng `error.tsx` trong App Router
+- **Error States**: Mọi component fetch data phải có error UI
+- **Error Messages**: Actionable, user-friendly
+- **Fallback UI**: Loading, error, empty states đầy đủ
+
+### 12. Styling - TailwindCSS + shadcn/ui
+
+```typescript
+// ✅ GOOD
+import { cn } from '@/lib/utils';
+
+export function Button({ variant, className, ...props }: ButtonProps) {
+  return (
+    <button
+      className={cn(
+        'base-styles',
+        variant === 'primary' && 'primary-styles',
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
+// ❌ BAD
+<button style={{ color: 'red' }}>Click</button>
+```
+
+- **TailwindCSS**: Utility classes, không inline styles
+- **shadcn/ui**: Tuân thủ design system, không override trừ khi cần
+- **Responsive**: Mobile-first approach
+- **Dark Mode**: Support nếu design system có
+
+### 13. Accessibility (a11y)
+
+```typescript
+// ✅ GOOD
+<button
+  onClick={handleDelete}
+  aria-label="Delete chatbot"
+  className="..."
+>
+  <TrashIcon aria-hidden="true" />
+</button>
+
+// ❌ BAD
+<div onClick={handleDelete}>
+  <TrashIcon />
+</div>
+```
+
+- **Semantic HTML**: `<button>`, `<nav>`, `<main>`, không `<div onClick>`
+- **ARIA Labels**: Thêm khi cần, ưu tiên semantic HTML trước
+- **Keyboard Navigation**: Tất cả interactive elements có thể navigate bằng keyboard
+- **Color Contrast**: WCAG AA standards (4.5:1 cho text)
+
+### 14. Import Organization
+
+```typescript
+// ✅ GOOD - Import order
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
+import { z } from 'zod';
+
+import { apiClient } from '@/lib/api/client';
+import { useChatbots } from '@/features/chatbots/hooks/useChatbots';
+
+import type { Chatbot } from '@/features/chatbots/types';
+```
+
+**Order**:
+1. React & Next.js
+2. Third-party libraries
+3. Internal absolute imports (`@/...`)
+4. Relative imports (`./`, `../`)
+5. Types (separate import)
+6. Styles (nếu có)
+
+### 15. Final Checklist (BẮT BUỘC trước khi commit)
+
+- [ ] ✅ Tất cả types đúng, không có `any` không cần thiết
+- [ ] ✅ Không có unused imports/variables/functions
+- [ ] ✅ Không có `console.log`/`debugger`
+- [ ] ✅ Không có commented-out code
+- [ ] ✅ Không có magic numbers/strings
+- [ ] ✅ Tất cả files đã format với Prettier
+- [ ] ✅ Tất cả linter errors đã fix
+- [ ] ✅ Components < 200 lines, Functions < 50 lines
+- [ ] ✅ Không có duplicate code
+- [ ] ✅ Đã tìm kiếm và tái sử dụng components có sẵn, không tạo component mới không cần thiết
+- [ ] ✅ Error/Loading/Empty states đầy đủ
+- [ ] ✅ Comments giải thích WHY, không phải WHAT
+- [ ] ✅ Code dễ đọc, dễ hiểu, dễ maintain
+
+**Nếu có bất kỳ item nào chưa check → KHÔNG ĐƯỢC COMMIT. Fix xong rồi mới commit.**
+
+---
+
+## 🎯 Mục Tiêu
+
+**Codebase này phải là một tác phẩm nghệ thuật - sạch, gọn, dễ đọc, dễ maintain, dễ scale.**
+
+Mỗi quyết định code phải có lý do rõ ràng. Tự hỏi: "6 tháng sau, tôi có hiểu code này không? Người mới vào team có hiểu không?"
