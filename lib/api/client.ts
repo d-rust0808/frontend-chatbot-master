@@ -6,7 +6,7 @@
 } from 'axios';
 import type { ApiError, ApiResponse } from './types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+const API_BASE_URL = 'https://cchatbot.pro';
 const API_PREFIX = '/api/v1';
 
 class ApiClient {
@@ -19,6 +19,8 @@ class ApiClient {
       headers: {
         'Content-Type': 'application/json',
       },
+      withCredentials: false,
+      timeout: 30000,
     });
 
     this.setupInterceptors();
@@ -37,6 +39,13 @@ class ApiClient {
         const tenantSlug = this.getTenantSlug();
         if (tenantSlug) {
           config.headers['x-tenant-slug'] = tenantSlug;
+        }
+
+        // If data is FormData, remove Content-Type header to let axios set it automatically with boundary
+        if (config.data instanceof FormData) {
+          delete config.headers['Content-Type'];
+          // Ensure FormData requests work with CORS
+          config.headers['Accept'] = 'application/json';
         }
 
         return config;

@@ -96,3 +96,26 @@ export async function cancelPayment(
   return apiClient.delete(`/admin/payments/${paymentId}`);
 }
 
+export interface TopUpUserBalanceRequest {
+  vndAmount?: number;
+  creditAmount?: number;
+  reason?: string;
+}
+
+export interface TopUpUserBalanceResponse {
+  userId: string;
+  tenantId: string;
+  tenantName: string;
+  vndAmount: number;
+  creditAmount: number;
+  newBalance: number;
+  newCredit: number;
+}
+
+export async function topUpUserBalance(
+  userId: string,
+  data: TopUpUserBalanceRequest
+): Promise<ApiResponse<TopUpUserBalanceResponse>> {
+  return apiClient.post(`/admin/users/${userId}/top-up`, data);
+}
+

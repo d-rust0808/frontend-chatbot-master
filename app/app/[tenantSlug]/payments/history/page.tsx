@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AppShell } from '@/components/layout/app-shell';
 import {
@@ -55,12 +55,14 @@ export default function PaymentHistoryPage({ params }: PaymentHistoryPageProps) 
       pending: 'secondary',
       expired: 'destructive',
       cancelled: 'outline',
+      processing: 'secondary',
     };
     const labels: Record<PaymentStatus, string> = {
       completed: 'Hoàn thành',
       pending: 'Đang chờ',
       expired: 'Hết hạn',
       cancelled: 'Đã hủy',
+      processing: 'Đang xử lý',
     };
     return (
       <Badge variant={variants[status]}>

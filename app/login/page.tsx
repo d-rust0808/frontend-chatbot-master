@@ -57,12 +57,14 @@ type LoginFormData = z.infer<typeof loginSchema>;
         if (tenantList.length === 1) {
           const tenant = tenantList[0];
           sessionStorage.setItem('tenantSlug', tenant.slug);
+          sessionStorage.setItem('tenantId', tenant.id);
           sessionStorage.setItem('lastTenantSlug', tenant.slug);
           router.push(`/app/${tenant.slug}/dashboard`);
         } else if (tenantList.length > 1) {
           // TODO: support tenant selection UI when multi-tenant is needed
           const tenant = tenantList[0];
           sessionStorage.setItem('tenantSlug', tenant.slug);
+          sessionStorage.setItem('tenantId', tenant.id);
           sessionStorage.setItem('lastTenantSlug', tenant.slug);
           router.push(`/app/${tenant.slug}/dashboard`);
         } else {

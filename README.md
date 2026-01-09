@@ -40,6 +40,11 @@ cp .env.example .env.local
 3. Update `.env.local` with your API URL:
 
 ```
+NEXT_PUBLIC_API_URL=https://cchatbot.pro
+```
+
+For local development, you can use:
+```
 NEXT_PUBLIC_API_URL=http://localhost:8080
 ```
 
@@ -54,6 +59,12 @@ pnpm dev
 ```
 
 5. Open [http://localhost:3001](http://localhost:3001) in your browser.
+
+## Production Deployment
+
+For production, the application is deployed at:
+- **Frontend**: https://cchatbot.pro
+- **API**: Configure `NEXT_PUBLIC_API_URL` environment variable (default: https://cchatbot.pro)
 
 ## Project Structure
 

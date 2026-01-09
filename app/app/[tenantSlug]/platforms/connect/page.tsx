@@ -45,14 +45,14 @@ const PLATFORM_CONFIG: Record<
     credentialsExample:
       '{"phoneNumberId": "...", "businessAccountId": "...", "accessToken": "..."}',
     optionsExample:
-      '{"webhookUrl": "https://your-domain.com/webhooks/whatsapp", "verifyToken": "..."}',
+      '{"webhookUrl": "https://cchatbot.pro/webhooks/whatsapp", "verifyToken": "..."}',
   },
   facebook: {
     description: 'Connect Facebook Messenger through a Facebook App + Page.',
     credentialsExample:
       '{"pageId": "...", "appId": "...", "appSecret": "...", "pageAccessToken": "..."}',
     optionsExample:
-      '{"webhookUrl": "https://your-domain.com/webhooks/facebook", "verifyToken": "..."}',
+      '{"webhookUrl": "https://cchatbot.pro/webhooks/facebook", "verifyToken": "..."}',
   },
   instagram: {
     description: 'Use the Instagram Messaging API via a Facebook App.',
@@ -64,7 +64,7 @@ const PLATFORM_CONFIG: Record<
     credentialsExample:
       '{"appKey": "...", "appSecret": "...", "accessToken": "..."}',
     optionsExample:
-      '{"webhookUrl": "https://your-domain.com/webhooks/tiktok", "eventTypes": ["message"]}',
+      '{"webhookUrl": "https://cchatbot.pro/webhooks/tiktok", "eventTypes": ["message"]}',
   },
   zalo: {
     description: 'Zalo OA (Official Account) messaging integration.',
@@ -226,7 +226,7 @@ export default function ConnectPlatformPage({ params }: ConnectPlatformPageProps
                 <Textarea
                   id="options"
                   {...register('options')}
-                  placeholder='{"webhookUrl": "https://...", "autoReply": true}'
+                  placeholder='{"webhookUrl": "https://cchatbot.pro/webhooks/...", "autoReply": true}'
                   rows={6}
                   className="font-mono text-sm"
                 />

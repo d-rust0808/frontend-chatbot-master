@@ -14,6 +14,7 @@ import {
   SlidersHorizontal,
   CreditCard,
   UserCircle2,
+  Package,
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { cn } from '@/lib/utils';
@@ -36,6 +37,7 @@ const navigation = [
   { name: 'Analytics', href: '/admin/analytics', icon: BarChart3 },
   { name: 'Logs', href: '/admin/logs', icon: ScrollText },
   { name: 'Config', href: '/admin/config', icon: SlidersHorizontal },
+  { name: 'Service Packages', href: '/admin/service-packages', icon: Package },
   { name: 'Billing', href: '/admin/billing', icon: CreditCard },
   { name: 'Settings', href: '/admin/settings', icon: Settings },
 ];

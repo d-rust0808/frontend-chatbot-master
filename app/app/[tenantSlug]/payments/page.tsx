@@ -17,8 +17,9 @@ import {
   getPendingPayment,
   cancelPendingPayment,
   getPaymentStatus,
-  getVNDBalance,
+  getAllBalances,
 } from '@/lib/api/payments';
+import { BALANCES_QUERY_KEY } from '@/hooks/use-balance-updates';
 import type { CreatePaymentRequest } from '@/lib/api/types';
 import { getErrorMessage } from '@/lib/utils';
 import { useForm } from 'react-hook-form';
@@ -30,7 +31,6 @@ import {
   Check,
   Loader2,
   AlertTriangle,
-  FileText,
   CreditCard,
   Building2,
   DollarSign,
@@ -67,9 +67,13 @@ export default function PaymentsPage({ params }: PaymentsPageProps) {
     content: string;
   } | null>(null);
 
-  const { data: balanceData, refetch: refetchBalance } = useQuery({
-    queryKey: ['vnd-balance'],
-    queryFn: () => getVNDBalance(),
+  // Use same query as header to ensure synchronization
+  const { data: balancesData, refetch: refetchBalance } = useQuery({
+    queryKey: BALANCES_QUERY_KEY,
+    queryFn: async () => {
+      const response = await getAllBalances();
+      return response.data.balances;
+    },
     retry: false,
     enabled: true,
   });
@@ -146,7 +150,8 @@ export default function PaymentsPage({ params }: PaymentsPageProps) {
     onSuccess: (response) => {
       if (response.data.status === 'completed') {
         queryClient.invalidateQueries({ queryKey: ['pending-payment'] });
-        refetchBalance();
+        // Invalidate balances query - this will update both header and payment page
+        queryClient.invalidateQueries({ queryKey: BALANCES_QUERY_KEY });
         queryClient.invalidateQueries({ queryKey: ['payments'] });
         setCurrentPaymentInfo(null);
       }
@@ -218,9 +223,9 @@ export default function PaymentsPage({ params }: PaymentsPageProps) {
               <CardDescription>Số dư hiện tại trong ví VNĐ</CardDescription>
             </CardHeader>
             <CardContent>
-              {balanceData ? (
+              {balancesData ? (
                 <div className="text-3xl font-bold text-primary">
-                  {balanceData.data.balance.toLocaleString('vi-VN')} VNĐ
+                  {balancesData.vnd.toLocaleString('vi-VN')} VNĐ
                 </div>
               ) : (
                 <div className="text-sm text-muted-foreground">

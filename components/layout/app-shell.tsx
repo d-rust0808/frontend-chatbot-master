@@ -23,12 +23,13 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { cn } from '@/lib/utils';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Header } from '@/components/header';
 import { Logo } from '@/components/logo';
 import { WalletDisplay } from '@/components/wallet-display';
 import { LanguageSwitcher } from '@/components/language-switcher';
-  import type { Wallet as WalletType } from '@/lib/api/types';
+import { useBalanceUpdates } from '@/hooks/use-balance-updates';
+import type { Wallet as WalletType } from '@/lib/api/types';
 
 interface AppShellProps { children: React.ReactNode; tenantSlug: string }
 
@@ -56,7 +57,20 @@ export function AppShell({ children, tenantSlug }: AppShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [wallet, setWallet] = useState<WalletType | null>(null);
 
+  // Get tenantId - try to get from API response or use tenantSlug as fallback
+  // Note: tenantId should be stored in sessionStorage after login/tenant selection
+  const [tenantId, setTenantId] = useState<string | null>(null);
+
   useEffect(() => {
+    // Try to get tenantId from sessionStorage
+    // If not available, we'll need to get it from API or use tenantSlug
+    const storedTenantId = sessionStorage.getItem('tenantId');
+    if (storedTenantId) {
+      setTenantId(storedTenantId);
+    }
+    // TODO: If tenantId not in sessionStorage, fetch from API using tenantSlug
+
+    // Load initial wallet from sessionStorage
     const walletData = sessionStorage.getItem('wallet');
     if (walletData) {
       try {
@@ -69,6 +83,40 @@ export function AppShell({ children, tenantSlug }: AppShellProps) {
       }
     }
   }, []);
+
+  // Memoize onUpdate callback to prevent recreating socket connection
+  const handleBalanceUpdate = useCallback((newBalances: { vnd: number; credit: number }) => {
+    // Update wallet state immediately when WebSocket updates
+    const updatedWallet: WalletType = {
+      vndBalance: newBalances.vnd,
+      creditBalance: newBalances.credit,
+    };
+    setWallet(updatedWallet);
+    // Update sessionStorage
+    sessionStorage.setItem('wallet', JSON.stringify(updatedWallet));
+  }, []);
+
+  // Use WebSocket for real-time balance updates
+  const { balances } = useBalanceUpdates({
+    tenantId,
+    enabled: !!tenantId,
+    onUpdate: handleBalanceUpdate,
+  });
+
+  // Update wallet when balances change (from API or WebSocket)
+  // Only update if balances have been loaded from API (not initial default)
+  useEffect(() => {
+    // Only update wallet if we have tenantId (meaning balances are from API/WebSocket)
+    // This prevents overwriting wallet from sessionStorage with default {vnd: 0, credit: 0}
+    if (tenantId && (balances.vnd > 0 || balances.credit > 0 || wallet === null)) {
+      const updatedWallet: WalletType = {
+        vndBalance: balances.vnd,
+        creditBalance: balances.credit,
+      };
+      setWallet(updatedWallet);
+      sessionStorage.setItem('wallet', JSON.stringify(updatedWallet));
+    }
+  }, [balances, tenantId, wallet]);
 
   const handleLogout = () => {
     sessionStorage.clear();
@@ -117,7 +165,16 @@ export function AppShell({ children, tenantSlug }: AppShellProps) {
           showLanguageSwitcher={false}
           rightContent={
             <div className="flex items-center gap-4">
-              {wallet && <WalletDisplay wallet={wallet} />}
+              {wallet ? (
+                <WalletDisplay wallet={wallet} />
+              ) : balances.vnd > 0 || balances.credit > 0 ? (
+                <WalletDisplay
+                  wallet={{
+                    vndBalance: balances.vnd,
+                    creditBalance: balances.credit,
+                  }}
+                />
+              ) : null}
               <LanguageSwitcher />
               <span className="text-sm font-medium text-gray-700">
                 {tenantSlug}

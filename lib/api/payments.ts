@@ -6,9 +6,11 @@ import type {
   Payment,
   PaymentStatusResponse,
   GetPaymentsParams,
+  CancelPaymentResponse,
   VNDBalance,
   GetVNDTransactionsParams,
   VNDTransactionsResponse,
+  AllBalancesResponse,
 } from './types';
 
 export async function createPayment(
@@ -21,7 +23,7 @@ export async function getPendingPayment(): Promise<ApiResponse<Payment>> {
   return apiClient.get('/admin/payments/pending');
 }
 
-export async function cancelPendingPayment(): Promise<ApiResponse<void>> {
+export async function cancelPendingPayment(): Promise<ApiResponse<CancelPaymentResponse>> {
   return apiClient.delete('/admin/payments/pending');
 }
 
@@ -45,5 +47,15 @@ export async function getVNDTransactions(
   params?: GetVNDTransactionsParams
 ): Promise<ApiResponse<VNDTransactionsResponse>> {
   return apiClient.get('/credits/vnd-transactions', params ? { params } : undefined);
+}
+
+export async function getPaymentById(
+  paymentId: string
+): Promise<ApiResponse<Payment>> {
+  return apiClient.get(`/admin/payments/${paymentId}`);
+}
+
+export async function getAllBalances(): Promise<ApiResponse<AllBalancesResponse>> {
+  return apiClient.get('/credits/balances');
 }
 

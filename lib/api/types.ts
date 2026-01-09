@@ -160,6 +160,9 @@ export interface User {
   email: string;
   name: string;
   createdAt: string;
+  updatedAt?: string;
+  balance?: number;
+  credit?: number;
   _count?: {
     tenants: number;
   };
@@ -263,7 +266,7 @@ export interface UpdateTenantAdminRequest {
 }
 
 // Payment Types
-export type PaymentStatus = 'pending' | 'completed' | 'expired' | 'cancelled';
+export type PaymentStatus = 'pending' | 'completed' | 'expired' | 'cancelled' | 'processing';
 
 export interface PaymentInfo {
   account: string;
@@ -291,13 +294,15 @@ export interface Payment {
   code: string;
   amount: number;
   status: PaymentStatus;
+  qrCode?: string; // Optional, chỉ có khi pending hoặc trong CreatePaymentResponse
+  qrCodeData?: string; // Optional, chỉ có trong CreatePaymentResponse
+  expiresAt?: string; // Optional, chỉ có khi pending
   createdAt: string;
-  completedAt?: string;
-  expiresAt?: string;
-  qrCode?: string;
-  timeRemaining?: number;
-  paymentInfo?: PaymentInfo;
-  cancelledAt?: string;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  webhookData: unknown | null;
+  paymentInfo?: PaymentInfo; // Optional, có trong CreatePaymentResponse và pending payment
+  timeRemaining?: number; // Frontend-only field for UI
 }
 
 export interface CancelPaymentResponse {
@@ -308,12 +313,9 @@ export interface CancelPaymentResponse {
 }
 
 export interface PaymentStatusResponse {
-  id: string;
   code: string;
-  amount: number;
   status: PaymentStatus;
-  completedAt?: string;
-  vndWalletBalance: number;
+  amount: number;
 }
 
 export interface GetPaymentsParams {
@@ -350,4 +352,121 @@ export interface VNDTransactionsResponse {
   limit: number;
   totalPages: number;
 }
+
+// Wallet Balance Types
+export interface Balances {
+  vnd: number;
+  credit: number;
+}
+
+export interface BalanceUpdateEvent {
+  tenantId: string;
+  balances: Balances;
+  timestamp: string;
+}
+
+export interface AllBalancesResponse {
+  balances: Balances;
+  tenantId: string;
+}
+
+// Service Package Types
+
+export type ServicePlatform =
+  | 'whatsapp'
+  | 'messenger'
+  | 'tiktok'
+  | 'zalo'
+  | 'instagram'
+  | 'shopee';
+
+export interface ServicePackageFeatures {
+  // Generic key-value store for feature limits (bots, messagesPerMonth, etc.)
+  [key: string]: number | string | boolean | null;
+}
+
+export interface ServicePackage {
+  id: string;
+  name: string;
+  description?: string | null;
+  service: ServicePlatform;
+  pricePerMonth: number;
+  minDuration: number;
+  imageUrl?: string | null;
+  features: ServicePackageFeatures;
+  isActive?: boolean;
+  sortOrder?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ServicePackageListItem {
+  id: string;
+  name: string;
+  description?: string | null;
+  service: ServicePlatform;
+  pricePerMonth: number;
+  minDuration: number;
+  features: ServicePackageFeatures;
+  imageUrl?: string | null;
+}
+
+export interface CreateServicePackageRequest {
+  name: string;
+  description?: string;
+  service: ServicePlatform;
+  pricePerMonth: number;
+  minDuration?: number;
+  features?: ServicePackageFeatures;
+  sortOrder?: number;
+  // Image is sent as multipart/form-data on the client, so not typed here
+}
+
+export interface UpdateServicePackageRequest
+  extends Partial<CreateServicePackageRequest> {
+  isActive?: boolean;
+}
+
+export interface ServicePackageSubscription {
+  id: string;
+  package: ServicePackage;
+  duration: number;
+  price: number;
+  status: 'active' | 'expired' | 'cancelled' | 'pending';
+  startDate: string;
+  endDate: string;
+  autoRenew: boolean;
+  daysRemaining: number;
+}
+
+export interface ServicePackageSubscriptionSummary {
+  id: string;
+  service: ServicePlatform;
+  serviceName: string;
+  imageUrl?: string | null;
+  startDate: string;
+  endDate: string;
+  daysRemaining: number;
+  isActive: boolean;
+}
+
+export interface PurchaseServicePackageRequest {
+  duration: number;
+}
+
+export interface PurchaseServicePackageResponse {
+  subscriptionId: string;
+  packageName: string;
+  service: ServicePlatform;
+  duration: number;
+  startDate: string;
+  endDate: string;
+  price: number;
+}
+
+export interface CheckServicePackageResponse {
+  isActive: boolean;
+  subscription: ServicePackageSubscriptionSummary | null;
+}
+
 

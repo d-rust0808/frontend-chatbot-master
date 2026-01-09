@@ -1,10 +1,10 @@
 import { FeaturePlaceholder } from '@/components/feature-placeholder';
 
 const plannedItems = [
-  'Plan catalog with pricing and feature limits',
-  'Invoice list with statuses and amounts',
-  'Adjustments/credits flow with confirmation',
-  'Exportable billing history for compliance',
+  'Quản lý nạp tiền của khách hàng (tenants)',
+  'Xem lịch sử giao dịch nạp tiền',
+  'Thống kê doanh thu từ nạp tiền',
+  'Xuất báo cáo billing',
 ];
 
 export default function AdminBillingPage() {
@@ -13,16 +13,15 @@ export default function AdminBillingPage() {
       <div>
         <h1 className="text-3xl font-bold">Billing</h1>
         <p className="text-muted-foreground">
-          Manage plans, invoices, and credits for all tenants.
+          Quản lý nạp tiền và giao dịch của khách hàng.
         </p>
       </div>
       <FeaturePlaceholder
         title="Billing module (planned)"
-        description="Navigation and layout placeholders ready for billing APIs."
+        description="Quản lý nạp tiền, lịch sử giao dịch và báo cáo billing cho tất cả tenants."
         plannedItems={plannedItems}
         badge="Planned"
       />
     </div>
   );
 }
-
