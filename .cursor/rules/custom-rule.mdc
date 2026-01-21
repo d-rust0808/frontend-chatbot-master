@@ -433,6 +433,94 @@ import type { Chatbot } from '@/features/chatbots/types';
 
 **Nếu có bất kỳ item nào chưa check → KHÔNG ĐƯỢC COMMIT. Fix xong rồi mới commit.**
 
+### 16. Admin & SP-Admin Separation - Tách Biệt Tuyệt Đối
+
+```typescript
+// ✅ GOOD - Tách biệt rõ ràng
+// app/admin/products/page.tsx
+export default function AdminProductsPage() {
+  // Chỉ code cho admin
+}
+
+// app/sp-admin/products/page.tsx
+export default function SPAdminProductsPage() {
+  // Chỉ code cho sp-admin
+}
+
+// ❌ BAD - KHÔNG BAO GIỜ
+// app/admin/products/page.tsx
+export default function ProductsPage() {
+  // Code chung cho cả admin và sp-admin
+  if (userRole === 'sp-admin') {
+    // Logic của sp-admin
+  } else {
+    // Logic của admin
+  }
+}
+```
+
+- **Tách Biệt Tuyệt Đối**: `admin` và `sp-admin` là 2 chức năng HOÀN TOÀN RIÊNG BIỆT
+- **KHÔNG ĐƯỢC**: Code chức năng của `admin` KHÔNG được đụng tới code của `sp-admin` và ngược lại
+- **Route Structure**: 
+  - `app/admin/*` → Chỉ dành cho admin
+  - `app/sp-admin/*` → Chỉ dành cho sp-admin
+  - KHÔNG có route chung, KHÔNG có shared logic giữa 2 admin types
+- **Components**: 
+  - `components/admin/*` → Chỉ dùng cho admin
+  - `components/sp-admin/*` → Chỉ dùng cho sp-admin
+  - KHÔNG tạo component chung với conditional rendering dựa trên role
+- **API Functions**:
+  - `lib/api/admin/*` → API functions cho admin
+  - `lib/api/sp-admin/*` → API functions cho sp-admin
+  - KHÔNG dùng chung API function với role checking
+- **Hooks**:
+  - `hooks/admin/*` → Hooks cho admin
+  - `hooks/sp-admin/*` → Hooks cho sp-admin
+  - KHÔNG tạo hook chung với role-based logic
+- **Types**:
+  - `types/admin.ts` → Types cho admin
+  - `types/sp-admin.ts` → Types cho sp-admin
+  - KHÔNG dùng chung types với conditional fields
+
+**Quy tắc bắt buộc**:
+1. 🔒 **Isolation**: Mỗi admin type có codebase riêng, không overlap
+2. 🚫 **No Shared Logic**: KHÔNG có shared components/hooks/api giữa admin và sp-admin
+3. 📁 **Separate Folders**: Tổ chức code trong folders riêng biệt
+4. ✅ **Independent**: Mỗi admin type có thể phát triển độc lập, không ảnh hưởng nhau
+5. 🧪 **Independent Testing**: Có thể test riêng từng admin type
+
+**Ví dụ cấu trúc**:
+```
+app/
+  admin/
+    products/
+      page.tsx          # Chỉ cho admin
+    categories/
+      page.tsx          # Chỉ cho admin
+  sp-admin/
+    products/
+      page.tsx          # Chỉ cho sp-admin
+    categories/
+      page.tsx          # Chỉ cho sp-admin
+
+components/
+  admin/
+    ProductForm.tsx     # Chỉ cho admin
+  sp-admin/
+    ProductForm.tsx     # Chỉ cho sp-admin
+
+lib/api/
+  admin/
+    products.ts         # API cho admin
+  sp-admin/
+    products.ts         # API cho sp-admin
+```
+
+**Nếu cần logic tương tự**:
+- Copy code và customize cho từng admin type
+- KHÔNG tạo shared component/hook với props `adminType` hoặc conditional logic
+- Mỗi admin type phải có implementation riêng, dù có thể giống nhau
+
 ---
 
 ## 🎯 Mục Tiêu

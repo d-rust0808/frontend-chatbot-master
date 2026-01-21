@@ -68,7 +68,7 @@ export default function PaymentsPage({ params }: PaymentsPageProps) {
   } | null>(null);
 
   // Use same query as header to ensure synchronization
-  const { data: balancesData, refetch: refetchBalance } = useQuery({
+  const { data: balancesData } = useQuery({
     queryKey: BALANCES_QUERY_KEY,
     queryFn: async () => {
       const response = await getAllBalances();

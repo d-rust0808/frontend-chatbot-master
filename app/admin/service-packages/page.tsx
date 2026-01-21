@@ -1,11 +1,17 @@
 'use client';
 
-import { useEffect, useState, type ChangeEvent } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  MessageSquare,
+  MessageCircle,
+  Video,
+  ShoppingBag,
+  Instagram,
+  type LucideIcon,
+} from 'lucide-react';
 import {
   Card,
   CardHeader,
@@ -13,617 +19,481 @@ import {
   CardDescription,
   CardContent,
   Button,
-  Input,
-  Label,
   Select,
-  Textarea,
   Badge,
 } from '@/components/ui';
 import {
-  getAdminServicePackages,
-  createAdminServicePackage,
-  updateAdminServicePackage,
-  deleteAdminServicePackage,
+  getServicePackages,
+  getServicePackageSubscriptions,
+  purchaseServicePackage,
+  cancelServicePackageSubscription,
 } from '@/lib/api/service-packages';
-import type { ServicePackage, ServicePlatform } from '@/lib/api/types';
+import type {
+  ServicePackageListItem,
+  ServicePackageSubscription,
+  ServicePlatform,
+} from '@/lib/api/types';
 import { getErrorMessage } from '@/lib/utils';
-import { useLoading } from '@/components/loading-provider';
 import { useAlert } from '@/components/alert-provider';
+import { useLoading } from '@/components/loading-provider';
+import { useConfirmDialog } from '@/components/confirm-dialog-provider';
+import { BALANCES_QUERY_KEY } from '@/hooks/use-balance-updates';
+import { ApiErrorException } from '@/lib/api/types';
 
-const servicePackageSchema = z.object({
-  id: z.string().optional(),
-  name: z.string().min(1, 'Tên gói là bắt buộc'),
-  description: z.string().optional(),
-  service: z.enum(['whatsapp', 'messenger', 'tiktok', 'zalo', 'instagram', 'shopee']),
-  pricePerMonth: z
-    .number({ invalid_type_error: 'Giá phải là số' })
-    .min(0, 'Giá phải lớn hơn hoặc bằng 0'),
-  minDuration: z
-    .number({ invalid_type_error: 'Thời gian tối thiểu phải là số' })
-    .min(1, 'Tối thiểu 1 tháng')
-    .default(1),
-  sortOrder: z.number().optional(),
-  featuresJson: z.string().optional(),
-  isActive: z.boolean().optional(),
-});
+// Map service platforms to icons
+const getServiceIcon = (service: ServicePlatform): LucideIcon => {
+  const iconMap: Record<ServicePlatform, LucideIcon> = {
+    whatsapp: MessageSquare,
+    messenger: MessageCircle,
+    tiktok: Video,
+    zalo: MessageCircle,
+    instagram: Instagram,
+    shopee: ShoppingBag,
+  };
+  return iconMap[service] || MessageSquare;
+};
 
-type ServicePackageFormData = z.infer<typeof servicePackageSchema>;
-
-const SERVICE_OPTIONS: Array<{ value: ServicePlatform; label: string }> = [
-  { value: 'whatsapp', label: 'WhatsApp' },
-  { value: 'messenger', label: 'Messenger' },
-  { value: 'tiktok', label: 'TikTok' },
-  { value: 'zalo', label: 'Zalo' },
-  { value: 'instagram', label: 'Instagram' },
-  { value: 'shopee', label: 'Shopee' },
-];
+const DURATIONS = [1, 3, 6, 12];
 
 export default function AdminServicePackagesPage() {
+  const router = useRouter();
   const queryClient = useQueryClient();
-  const { withLoading } = useLoading();
   const { showAlert } = useAlert();
-  const [imageFile, setImageFile] = useState<File | null>(null);
+  const { withLoading } = useLoading();
+  const { showConfirm } = useConfirmDialog();
+  const [selectedDurations, setSelectedDurations] = useState<
+    Record<string, number>
+  >({});
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const {
     data: packagesData,
-    isLoading,
-    error,
+    isLoading: isLoadingPackages,
+    error: packagesError,
   } = useQuery({
-    queryKey: ['admin', 'service-packages'],
-    queryFn: () => getAdminServicePackages(),
+    queryKey: ['admin', 'service-packages', 'marketplace'],
+    queryFn: () => getServicePackages(),
   });
 
   const {
-    register,
-    handleSubmit,
-    reset,
-    setValue,
-    formState: { errors, isSubmitting },
-  } = useForm<ServicePackageFormData>({
-    resolver: zodResolver(servicePackageSchema),
-    defaultValues: {
-      service: 'whatsapp',
-      minDuration: 1,
-      isActive: true,
+    data: subscriptionsData,
+    isLoading: isLoadingSubscriptions,
+    error: subscriptionsError,
+  } = useQuery({
+    queryKey: ['admin', 'service-packages', 'subscriptions'],
+    queryFn: () => getServicePackageSubscriptions(),
+  });
+
+  const purchaseMutation = useMutation({
+    mutationFn: async (args: { packageId: string; duration: number }) =>
+      withLoading(purchaseServicePackage(args.packageId, { duration: args.duration })),
+    onSuccess: (response) => {
+      setErrorMessage(null);
+      const packageName = response.data.packageName || 'Gói dịch vụ';
+      const duration = response.data.duration;
+      const totalPrice = response.data.price || 0;
+      
+      showAlert({
+        message: `Đăng ký ${packageName} ${duration} tháng thành công!`,
+        description: `Tổng thanh toán: ${totalPrice.toLocaleString('vi-VN')} VNĐ. Gói dịch vụ đã được kích hoạt.`,
+        variant: 'success',
+        timeoutMs: 8000,
+      });
+
+      // Invalidate queries to refresh data
+      queryClient.invalidateQueries({
+        queryKey: ['admin', 'service-packages', 'subscriptions'],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['admin', 'service-packages', 'marketplace'],
+      });
+      // Invalidate balances to update wallet display
+      queryClient.invalidateQueries({
+        queryKey: BALANCES_QUERY_KEY,
+      });
+    },
+    onError: (error) => {
+      let errorMsg = getErrorMessage(error);
+      
+      // Handle specific error codes
+      if (error instanceof ApiErrorException) {
+        const errorCode = error.code;
+        if (errorCode === 'INSUFFICIENT_VND_BALANCE') {
+          errorMsg = 'Không đủ số dư VNĐ trong wallet. Vui lòng nạp thêm tiền vào wallet.';
+      showAlert({
+            message: 'Không đủ số dư VNĐ',
+            description: `Vui lòng nạp thêm tiền vào wallet để tiếp tục đăng ký gói dịch vụ. Vào trang Nạp Tiền để nạp thêm.`,
+        variant: 'error',
+            timeoutMs: 10000,
+          });
+          // Auto redirect to payments page after 2 seconds
+          setTimeout(() => {
+            router.push('/admin/payments');
+          }, 2000);
+        } else if (errorCode === 'VALIDATION_ERROR') {
+          errorMsg = 'Dữ liệu không hợp lệ. Vui lòng kiểm tra lại thời hạn đăng ký.';
+        }
+      }
+      
+      setErrorMessage(errorMsg);
     },
   });
 
-  const createMutation = useMutation({
-    mutationFn: async (data: ServicePackageFormData) => {
-      const parsedFeatures =
-        data.featuresJson && data.featuresJson.trim().length > 0
-          ? JSON.parse(data.featuresJson)
-          : undefined;
-
-      try {
-        const result = await withLoading(
-          createAdminServicePackage({
-        name: data.name,
-        description: data.description,
-        service: data.service,
-        pricePerMonth: data.pricePerMonth,
-        minDuration: data.minDuration,
-        sortOrder: data.sortOrder,
-        features: parsedFeatures,
-        imageFile,
-          })
-        );
-        return result;
-      } catch (error) {
-        // Log error for debugging
-        // eslint-disable-next-line no-console
-        console.error('Create service package error:', error);
-        throw error;
-      }
-    },
+  const cancelMutation = useMutation({
+    mutationFn: async (subscriptionId: string) =>
+      withLoading(cancelServicePackageSubscription(subscriptionId)),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'service-packages'] });
-      reset({
-        id: undefined,
-        name: '',
-        description: '',
-        service: 'whatsapp',
-        pricePerMonth: undefined,
-        minDuration: 1,
-        sortOrder: undefined,
-        featuresJson: '',
-        isActive: true,
-      });
-      setImageFile(null);
-      // Reset file input element
-      const fileInput = document.getElementById('image') as HTMLInputElement;
-      if (fileInput) {
-        fileInput.value = '';
-      }
       showAlert({
-        message: 'Tạo gói dịch vụ thành công',
+        message: 'Đã hủy đăng ký gói dịch vụ thành công',
         variant: 'success',
+        timeoutMs: 5000,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['admin', 'service-packages', 'subscriptions'],
       });
     },
-    onError: (error: unknown) => {
-      const errorMessage = getErrorMessage(error);
+    onError: (error) => {
+      const errorMsg = getErrorMessage(error);
       showAlert({
-        message: 'Không thể tạo gói dịch vụ',
-        description: errorMessage,
+        message: 'Không thể hủy đăng ký',
+        description: errorMsg,
         variant: 'error',
         timeoutMs: 8000,
       });
     },
   });
 
-  const updateMutation = useMutation({
-    mutationFn: async (data: ServicePackageFormData) => {
-      if (!data.id) {
-        throw new Error('Thiếu id gói dịch vụ để cập nhật');
-      }
-      const parsedFeatures =
-        data.featuresJson && data.featuresJson.trim().length > 0
-          ? JSON.parse(data.featuresJson)
-          : undefined;
-
-      try {
-        const result = await withLoading(
-          updateAdminServicePackage(data.id, {
-        name: data.name,
-        description: data.description,
-        service: data.service,
-        pricePerMonth: data.pricePerMonth,
-        minDuration: data.minDuration,
-        sortOrder: data.sortOrder,
-        features: parsedFeatures,
-        isActive: data.isActive,
-        imageFile,
-          })
-        );
-        return result;
-      } catch (error) {
-        // Log error for debugging
-        // eslint-disable-next-line no-console
-        console.error('Update service package error:', error);
-        throw error;
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'service-packages'] });
-      reset({
-        service: 'whatsapp',
-        minDuration: 1,
-        isActive: true,
-      });
-      setImageFile(null);
-      showAlert({
-        message: 'Cập nhật gói dịch vụ thành công',
-        variant: 'success',
-      });
-    },
-    onError: (error: unknown) => {
-      const errorMessage = getErrorMessage(error);
-      showAlert({
-        message: 'Không thể cập nhật gói dịch vụ',
-        description: errorMessage,
-        variant: 'error',
-        timeoutMs: 8000,
-      });
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      try {
-        const result = await withLoading(deleteAdminServicePackage(id));
-        return result;
-      } catch (error) {
-        // Log error for debugging
-        // eslint-disable-next-line no-console
-        console.error('Delete service package error:', error);
-        throw error;
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'service-packages'] });
-      showAlert({
-        message: 'Xóa gói dịch vụ thành công',
-        variant: 'success',
-      });
-    },
-    onError: (error: unknown) => {
-      const errorMessage = getErrorMessage(error);
-      showAlert({
-        message: 'Không thể xóa gói dịch vụ',
-        description: errorMessage,
-        variant: 'error',
-        timeoutMs: 8000,
-      });
-    },
-  });
-
-  const handleEditClick = (pkg: ServicePackage) => {
-    const featuresJson =
-      pkg.features && Object.keys(pkg.features).length > 0
-        ? JSON.stringify(pkg.features, null, 2)
-        : '';
-
-    setValue('id', pkg.id);
-    setValue('name', pkg.name);
-    setValue('description', pkg.description ?? '');
-    setValue('service', pkg.service);
-    setValue('pricePerMonth', pkg.pricePerMonth);
-    setValue('minDuration', pkg.minDuration);
-    setValue('sortOrder', pkg.sortOrder ?? undefined);
-    setValue('featuresJson', featuresJson);
-    setValue('isActive', pkg.isActive ?? true);
-  };
-
-  const onSubmit = (data: ServicePackageFormData) => {
-    if (data.featuresJson) {
-      try {
-        JSON.parse(data.featuresJson);
-      } catch {
-        // eslint-disable-next-line no-alert
-        alert('Features phải là JSON hợp lệ');
-        return;
-      }
-    }
-
-    if (data.id) {
-      updateMutation.mutate(data);
-    } else {
-      createMutation.mutate(data);
+  const handleDurationChange = (packageId: string, value: string) => {
+    const duration = Number(value);
+    if (!Number.isNaN(duration)) {
+      setSelectedDurations((prev) => ({ ...prev, [packageId]: duration }));
     }
   };
 
-  const handleClearForm = () => {
-    reset({
-      id: undefined,
-      name: '',
-      description: '',
-      service: 'whatsapp',
-      pricePerMonth: undefined,
-      minDuration: 1,
-      sortOrder: undefined,
-      featuresJson: '',
-      isActive: true,
+  const handlePurchase = (pkg: ServicePackageListItem) => {
+    const duration = selectedDurations[pkg.id] ?? pkg.minDuration ?? 1;
+    const totalPrice = pkg.pricePerMonth * duration;
+        showConfirm({
+      title: 'Xác nhận mua gói dịch vụ',
+      message: `Xác nhận mua gói "${pkg.name}"?\n\nThời hạn: ${duration} tháng\nGiá: ${totalPrice.toLocaleString('vi-VN')} VNĐ\n\nSố tiền sẽ được trừ từ số dư ví VNĐ của bạn.`,
+      confirmText: 'Xác nhận mua',
+      cancelText: 'Hủy',
+      onConfirm: () => {
+        purchaseMutation.mutate({ packageId: pkg.id, duration });
+      },
     });
-    setImageFile(null);
-    // Reset file input element
-    const fileInput = document.getElementById('image') as HTMLInputElement;
-    if (fileInput) {
-      fileInput.value = '';
-    }
   };
 
-  const packages = packagesData?.data ?? [];
-
-  useEffect(() => {
-    setValue('isActive', true);
-  }, [setValue]);
-
-  const handleImageChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] ?? null;
-    if (!file) {
-      setImageFile(null);
-      return;
-    }
-
-    const maxSizeBytes = 5 * 1024 * 1024;
-    if (file.size > maxSizeBytes) {
-      // eslint-disable-next-line no-alert
-      alert('Ảnh vượt quá kích thước tối đa 5MB');
-      event.target.value = '';
-      setImageFile(null);
-      return;
-    }
-
-    setImageFile(file);
+  const handleCancel = (subscription: ServicePackageSubscription) => {
+    showConfirm({
+      title: 'Xác nhận hủy đăng ký',
+      message: `Xác nhận hủy đăng ký gói "${subscription.package.name}"?\n\nGói dịch vụ sẽ bị hủy ngay lập tức và bạn sẽ không thể sử dụng dịch vụ sau khi hủy.`,
+      confirmText: 'Hủy đăng ký',
+      cancelText: 'Không',
+      onConfirm: () => {
+        cancelMutation.mutate(subscription.id);
+      },
+    });
   };
+
+  const servicePackages = packagesData?.data ?? [];
+  const subscriptions = subscriptionsData?.data ?? [];
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Service Packages</h1>
+        <h1 className="text-3xl font-bold">Dịch Vụ & Gói Cước</h1>
         <p className="text-muted-foreground">
-          Quản lý gói dịch vụ cho các nền tảng (SP-Admin).
+          Chọn và quản lý các gói dịch vụ nền tảng (WhatsApp, Messenger, TikTok, Zalo, ...).
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Tạo / Cập nhật gói dịch vụ</CardTitle>
-          <CardDescription>
-            Điền thông tin gói. Chọn gói trong danh sách bên dưới để chỉnh sửa.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="name">Tên gói *</Label>
-                <Input id="name" {...register('name')} />
-                {errors.name && (
-                  <p className="text-sm text-destructive">{errors.name.message}</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="service">Nền tảng *</Label>
-                <Select id="service" {...register('service')}>
-                  {SERVICE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </Select>
-                {errors.service && (
-                  <p className="text-sm text-destructive">
-                    {errors.service.message}
-                  </p>
-                )}
+      {errorMessage && (
+        <Card className="border-destructive bg-destructive/5">
+          <CardContent className="pt-4">
+            <p className="text-sm text-destructive">{errorMessage}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">Marketplace dịch vụ</h2>
+            <p className="text-sm text-muted-foreground">
+              Chọn gói phù hợp cho từng nền tảng. Thanh toán bằng số dư ví VNĐ.
+            </p>
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="description">Mô tả</Label>
-              <Textarea id="description" rows={3} {...register('description')} />
-              {errors.description && (
-                <p className="text-sm text-destructive">
-                  {errors.description.message}
-                </p>
-              )}
+        {isLoadingPackages ? (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3].map((i) => (
+              <Card key={i} className="animate-pulse">
+                <CardHeader>
+                  <div className="h-4 w-32 bg-gray-200" />
+                </CardHeader>
+                <CardContent>
+                  <div className="h-3 w-24 bg-gray-200" />
+                </CardContent>
+              </Card>
+            ))}
             </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-2">
-                <Label htmlFor="pricePerMonth">Giá / tháng (VNĐ) *</Label>
-                <Input
-                  id="pricePerMonth"
-                  type="number"
-                  {...register('pricePerMonth', { valueAsNumber: true })}
-                />
-                {errors.pricePerMonth && (
+        ) : packagesError ? (
+          <Card className="border-destructive bg-destructive/5">
+            <CardContent className="pt-4">
                   <p className="text-sm text-destructive">
-                    {errors.pricePerMonth.message}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="minDuration">Thời gian tối thiểu (tháng)</Label>
-                <Input
-                  id="minDuration"
-                  type="number"
-                  {...register('minDuration', { valueAsNumber: true })}
-                />
-                {errors.minDuration && (
-                  <p className="text-sm text-destructive">
-                    {errors.minDuration.message}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="sortOrder">Thứ tự hiển thị</Label>
-                <Input
-                  id="sortOrder"
-                  type="number"
-                  {...register('sortOrder', { valueAsNumber: true })}
-                />
-                {errors.sortOrder && (
-                  <p className="text-sm text-destructive">
-                    {errors.sortOrder.message}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="image">Ảnh gói dịch vụ</Label>
-              <div className="flex h-10 items-center gap-3 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
-                <input
-                  id="image"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={handleImageChange}
-                  className="sr-only"
-                />
-                <label
-                  htmlFor="image"
-                  className="inline-flex cursor-pointer items-center justify-center rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-                >
-                  Chọn ảnh
-                </label>
-                <span className="flex-1 truncate text-sm text-muted-foreground">
-                  {imageFile
-                    ? `${imageFile.name} (${Math.round(
-                        imageFile.size / 1024
-                      ).toLocaleString('vi-VN')} KB)`
-                    : 'Chưa chọn ảnh nào • jpg/png/webp, tối đa 5MB'}
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Ảnh dùng để hiển thị trong marketplace và sidebar. Nếu không chọn ảnh
-                mới, backend sẽ giữ nguyên ảnh hiện tại (nếu có).
+                Không thể tải danh sách gói dịch vụ. Vui lòng thử lại.
               </p>
-            </div>
-
-            <div className="flex items-center justify-end gap-3">
-              <Button type="button" variant="outline" onClick={handleClearForm}>
-                Làm mới form
-              </Button>
-              <Button
-                type="submit"
-                disabled={
-                  isSubmitting ||
-                  createMutation.isPending ||
-                  updateMutation.isPending
-                }
-              >
-                {isSubmitting || createMutation.isPending || updateMutation.isPending
-                  ? 'Đang lưu...'
-                  : 'Lưu gói dịch vụ'}
-              </Button>
-            </div>
-
-            {(() => {
-              const error = createMutation.error || updateMutation.error;
-              if (!error) return null;
-              const errorMessage = getErrorMessage(error);
-              return (
-                <p className="text-sm text-destructive">{errorMessage}</p>
-              );
-            })()}
-          </form>
         </CardContent>
       </Card>
-
+        ) : servicePackages.length === 0 ? (
       <Card>
         <CardHeader>
-          <CardTitle>Danh sách gói dịch vụ</CardTitle>
+              <CardTitle>Chưa có gói dịch vụ</CardTitle>
           <CardDescription>
-            Chọn gói để chỉnh sửa hoặc xoá. Không thể xoá nếu có subscription đang
-            hoạt động.
+                Liên hệ quản trị hệ thống để cấu hình gói dịch vụ.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <p className="text-sm text-muted-foreground">Đang tải gói dịch vụ...</p>
-          ) : error ? (
-            <p className="text-sm text-destructive">
-              Không thể tải danh sách gói dịch vụ.
-            </p>
-          ) : packages.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Chưa có gói dịch vụ nào. Hãy tạo gói mới phía trên.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {packages.map((pkg) => (
-                <div
-                  key={pkg.id}
-                  className="group flex items-center gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-all duration-200 hover:border-gray-300 hover:shadow-md"
-                >
-                  {/* Image Section */}
-                  <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md bg-gradient-to-br from-gray-50 to-gray-100">
-                    {pkg.imageUrl ? (
+          </Card>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {servicePackages.map((pkg) => {
+              const selectedDuration =
+                selectedDurations[pkg.id] ?? pkg.minDuration ?? 1;
+              return (
+                <Card key={pkg.id} className="flex flex-col">
+                  <CardHeader className="pb-3 sm:pb-6">
+                    <div className="flex items-start gap-2 sm:gap-3">
+                      {pkg.imageUrl && (
+                        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-gradient-to-br from-gray-50 to-gray-100 sm:h-12 sm:w-12">
                       <Image
                         src={pkg.imageUrl}
                         alt={pkg.name}
                         fill
-                        className="object-contain p-1.5 transition-transform duration-200 group-hover:scale-105"
-                        sizes="64px"
-                        priority={false}
+                            className="object-contain p-1 sm:p-1.5"
+                            sizes="(max-width: 640px) 40px, 48px"
                       />
-                    ) : (
-                      <div className="flex h-full items-center justify-center">
-                        <div className="text-lg font-bold text-gray-300 uppercase">
-                          {pkg.service.charAt(0)}
-                        </div>
                       </div>
                     )}
-                  </div>
-
-                  {/* Content Section */}
-                  <div className="flex flex-1 items-center gap-4 overflow-hidden">
-                    {/* Main Info */}
                     <div className="flex-1 min-w-0">
-                      <div className="mb-1 flex flex-wrap items-center gap-2">
-                        <h3 className="text-base font-semibold text-gray-900 truncate">
-                          {pkg.name}
-                        </h3>
-                        <Badge
-                          variant={pkg.isActive ? 'default' : 'secondary'}
-                          className="shrink-0 text-xs"
-                        >
-                          {pkg.isActive ? 'Active' : 'Inactive'}
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className="shrink-0 text-xs uppercase"
-                        >
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+                          <CardTitle className="text-base sm:text-lg truncate">{pkg.name}</CardTitle>
+                          <Badge variant="outline" className="uppercase shrink-0 text-[10px] sm:text-xs w-fit">
                           {pkg.service}
                         </Badge>
                       </div>
                       {pkg.description && (
-                        <p className="truncate text-sm text-gray-600">
+                          <CardDescription className="line-clamp-2 text-xs sm:text-sm mt-1">
                           {pkg.description}
-                        </p>
-                      )}
-                      {/* Mobile: Show price inline */}
-                      <div className="mt-1 flex items-center gap-3 md:hidden">
-                        <span className="text-sm font-bold text-orange-600">
-                          {pkg.pricePerMonth.toLocaleString('vi-VN')} VNĐ/tháng
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          • Tối thiểu {pkg.minDuration} tháng
-                        </span>
+                          </CardDescription>
+                        )}
                       </div>
                     </div>
-
-                    {/* Details */}
-                    <div className="hidden shrink-0 items-center gap-6 md:flex">
-                      <div className="text-right">
-                        <div className="text-xs text-gray-500">Giá / tháng</div>
-                        <div className="text-sm font-bold text-orange-600">
+                  </CardHeader>
+                  <CardContent className="flex flex-1 flex-col gap-3 sm:gap-4 pt-0">
+                    <div className="space-y-1">
+                      <p className="text-xl sm:text-2xl font-bold text-primary">
                           {pkg.pricePerMonth.toLocaleString('vi-VN')} VNĐ
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xs text-gray-500">Tối thiểu</div>
-                        <div className="text-sm font-medium text-gray-700">
-                          {pkg.minDuration} tháng
-                        </div>
-                      </div>
-                      {pkg.sortOrder !== null && pkg.sortOrder !== undefined && (
-                        <div className="text-right">
-                          <div className="text-xs text-gray-500">Thứ tự</div>
-                          <div className="text-sm text-gray-600">
-                            #{pkg.sortOrder}
-                          </div>
-                        </div>
-                      )}
+                        <span className="text-xs sm:text-sm font-normal text-muted-foreground">
+                          {' '}
+                          / tháng
+                        </span>
+                      </p>
+                      <p className="text-[11px] sm:text-xs text-muted-foreground">
+                        Thời gian tối thiểu: {pkg.minDuration} tháng
+                      </p>
                     </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex shrink-0 gap-2">
+                    <div className="space-y-2">
+                      <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">
+                        Chọn thời hạn đăng ký
+                      </p>
+                      <Select
+                        value={String(selectedDuration)}
+                        onChange={(event) =>
+                          handleDurationChange(pkg.id, event.target.value)
+                        }
+                        className="h-11 sm:h-10 text-sm"
+                      >
+                        {DURATIONS.map((month) => (
+                          <option
+                            key={month}
+                            value={month}
+                            disabled={month < (pkg.minDuration ?? 1)}
+                          >
+                            {month} tháng
+                          </option>
+                        ))}
+                      </Select>
+                      <p className="text-[11px] sm:text-xs text-muted-foreground">
+                        Tổng:{' '}
+                        <span className="font-semibold text-foreground">
+                          {(
+                            pkg.pricePerMonth * selectedDuration
+                          ).toLocaleString('vi-VN')}{' '}
+                          VNĐ
+                        </span>
+                      </p>
+                    </div>
+
+                    <Button
+                      className="mt-auto w-full h-11 sm:h-10 text-sm sm:text-base font-semibold touch-manipulation"
+                      onClick={() => handlePurchase(pkg)}
+                      disabled={purchaseMutation.isPending}
+                    >
+                      {purchaseMutation.isPending
+                        ? 'Đang xử lý...'
+                        : 'Mua gói dịch vụ'}
+                      </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">Đăng ký hiện tại</h2>
+            <p className="text-sm text-muted-foreground">
+              Xem trạng thái các gói dịch vụ bạn đã mua.
+            </p>
+          </div>
+        </div>
+
+        {isLoadingSubscriptions ? (
+          <Card className="animate-pulse">
+            <CardContent className="pt-4">
+              <div className="h-4 w-40 bg-gray-200" />
+            </CardContent>
+          </Card>
+        ) : subscriptionsError ? (
+          <Card className="border-destructive bg-destructive/5">
+            <CardContent className="pt-4">
+              <p className="text-sm text-destructive">
+                Không thể tải danh sách đăng ký dịch vụ.
+              </p>
+            </CardContent>
+          </Card>
+        ) : subscriptions.length === 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Chưa có đăng ký dịch vụ</CardTitle>
+              <CardDescription>
+                Hãy mua gói dịch vụ ở danh sách phía trên để bắt đầu sử dụng nền tảng.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {subscriptions.map((sub: ServicePackageSubscription) => {
+              const ServiceIcon = getServiceIcon(sub.package.service);
+              return (
+                <Card key={sub.id} className="flex flex-col">
+                  <CardHeader className="pb-4">
+                    <div className="flex items-start gap-3 mb-3">
+                      {sub.package.imageUrl ? (
+                        <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-gradient-to-br from-gray-50 to-gray-100">
+                          <Image
+                            src={sub.package.imageUrl}
+                            alt={sub.package.name}
+                            fill
+                            className="object-contain p-2"
+                            sizes="48px"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary/10 to-primary/5">
+                          <ServiceIcon className="h-6 w-6 text-primary" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <CardTitle className="text-lg font-semibold flex-1 truncate">
+                            {sub.package.name}
+                          </CardTitle>
+                          <Badge
+                            variant={
+                              sub.status === 'active'
+                                ? 'default'
+                                : sub.status === 'expired'
+                                ? 'destructive'
+                                : 'secondary'
+                            }
+                            className="shrink-0 text-xs"
+                          >
+                            {sub.status === 'active' ? 'Đang hoạt động' : 
+                             sub.status === 'expired' ? 'Hết hạn' : 
+                             sub.status === 'cancelled' ? 'Đã hủy' : 'Chờ xử lý'}
+                          </Badge>
+                      </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge variant="outline" className="text-xs uppercase">
+                            <ServiceIcon className="mr-1 h-3 w-3" />
+                            {sub.package.service}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-3">
+                      Thời gian: {sub.duration} tháng • Giá:{' '}
+                      <span className="font-semibold text-foreground">
+                        {sub.price.toLocaleString('vi-VN')} VNĐ
+                      </span>
+                    </p>
+                  </CardHeader>
+                  <CardContent className="flex flex-1 flex-col gap-3 pt-0">
+                    <div className="space-y-2 rounded-lg bg-gray-50 p-3">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Bắt đầu:</span>
+                        <span className="font-medium">
+                          {new Date(sub.startDate).toLocaleDateString('vi-VN')}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Kết thúc:</span>
+                        <span className="font-medium">
+                          {new Date(sub.endDate).toLocaleDateString('vi-VN')}
+                        </span>
+                          </div>
+                      <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+                        <span className="text-sm font-medium text-muted-foreground">
+                          Còn lại:
+                        </span>
+                        <span
+                          className={`text-base font-bold ${
+                            sub.daysRemaining <= 0
+                              ? 'text-destructive'
+                              : sub.daysRemaining < 7
+                              ? 'text-amber-600'
+                              : 'text-emerald-600'
+                          }`}
+                        >
+                          {sub.daysRemaining} ngày
+                        </span>
+                        </div>
+                    </div>
                       <Button
-                        type="button"
                         variant="outline"
                         size="sm"
-                        className="text-xs"
-                        onClick={() => handleEditClick(pkg)}
+                      className="w-full h-10 text-sm touch-manipulation border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                      onClick={() => handleCancel(sub)}
+                      disabled={cancelMutation.isPending || sub.status !== 'active'}
                       >
-                        Sửa
+                      {cancelMutation.isPending
+                        ? 'Đang huỷ...'
+                        : 'Huỷ đăng ký'}
                       </Button>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        className="text-xs"
-                        disabled={deleteMutation.isPending}
-                        onClick={() => {
-                          // eslint-disable-next-line no-alert
-                          const confirmed = window.confirm(
-                            'Bạn chắc chắn muốn xoá gói dịch vụ này?'
-                          );
-                          if (confirmed) {
-                            deleteMutation.mutate(pkg.id);
-                          }
-                        }}
-                      >
-                        Xoá
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {(() => {
-                if (!deleteMutation.error) return null;
-                const errorMessage = getErrorMessage(deleteMutation.error);
-                return (
-                  <p className="text-sm text-destructive">{errorMessage}</p>
-                );
-              })()}
+                  </CardContent>
+                </Card>
+              );
+            })}
             </div>
           )}
-        </CardContent>
-      </Card>
+      </section>
     </div>
   );
 }
-

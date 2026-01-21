@@ -7,6 +7,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { getUsers, topUpUserBalance } from '@/lib/api/admin';
 import type { TopUpUserBalanceRequest } from '@/lib/api/admin';
+import type { ApiResponse } from '@/lib/api/types';
+import { isPaginationMeta } from '@/lib/api/types';
 import {
   Card,
   CardContent,
@@ -51,9 +53,16 @@ interface TopUpFormProps {
   userName: string;
   onSuccess: () => void;
   onCancel: () => void;
+  queryKey: readonly unknown[];
 }
 
-function TopUpForm({ userId, userName, onSuccess, onCancel }: TopUpFormProps) {
+function TopUpForm({
+  userId,
+  userName,
+  onSuccess,
+  onCancel,
+  queryKey,
+}: TopUpFormProps) {
   const { withLoading } = useLoading();
   const { showAlert } = useAlert();
   const queryClient = useQueryClient();
@@ -82,16 +91,46 @@ function TopUpForm({ userId, userName, onSuccess, onCancel }: TopUpFormProps) {
 
       return withLoading(topUpUserBalance(userId, request));
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
-      reset();
+    onSuccess: async (data) => {
+      // Show alert first
       showAlert({
         message: 'Nạp tiền thành công',
         description: `Số dư mới: ${data.data.newBalance.toLocaleString('vi-VN')} VND | Credit mới: ${data.data.newCredit.toLocaleString('vi-VN')}`,
         variant: 'success',
         timeoutMs: 8000,
       });
-      onSuccess();
+
+      // Update cache immediately for instant UI update
+      queryClient.setQueryData<ApiResponse<User[]>>(queryKey, (oldData) => {
+        if (!oldData?.data) return oldData;
+        return {
+          ...oldData,
+          data: oldData.data.map((user: User) =>
+            user.id === userId
+              ? {
+                  ...user,
+                  balance: data.data.newBalance,
+                  credit: data.data.newCredit,
+                }
+              : user
+          ),
+        };
+      });
+
+      // Invalidate and refetch all user queries to ensure consistency
+      await queryClient.invalidateQueries({
+        queryKey: ['admin', 'users'],
+      });
+      await queryClient.refetchQueries({
+        queryKey: ['admin', 'users'],
+      });
+
+      reset();
+      
+      // Delay closing form to ensure alert is visible
+      setTimeout(() => {
+        onSuccess();
+      }, 100);
     },
     onError: (error: unknown) => {
       const errorMessage = getErrorMessage(error);
@@ -345,13 +384,16 @@ export default function AdminUsersPage() {
               <span className="text-sm text-muted-foreground">
                 Trang {page}
                 {usersData?.meta &&
+                  isPaginationMeta(usersData.meta) &&
                   ` / ${usersData.meta.totalPages} (Tổng: ${usersData.meta.total})`}
               </span>
               <Button
                 variant="outline"
                 disabled={
                   users.length < limit ||
-                  (usersData?.meta && page >= usersData.meta.totalPages)
+                  (usersData?.meta &&
+                    isPaginationMeta(usersData.meta) &&
+                    page >= usersData.meta.totalPages)
                 }
                 onClick={() => setPage((p) => p + 1)}
               >
@@ -368,6 +410,7 @@ export default function AdminUsersPage() {
           userName={selectedUser.name}
           onSuccess={() => setSelectedUserId(null)}
           onCancel={() => setSelectedUserId(null)}
+          queryKey={['admin', 'users', { page, limit, search: search || undefined }]}
         />
       )}
     </div>

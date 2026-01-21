@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getTenants } from '@/lib/api/admin';
+import { isPaginationMeta } from '@/lib/api/types';
 import {
   Card,
   CardContent,
@@ -39,7 +40,7 @@ export default function AdminTenantsPage() {
   useEffect(() => {
     if (tenantsData) {
       setTenants(tenantsData.data || []);
-      if (tenantsData.meta) {
+      if (tenantsData.meta && isPaginationMeta(tenantsData.meta)) {
         setPagination(tenantsData.meta);
       }
       setLoading(false);

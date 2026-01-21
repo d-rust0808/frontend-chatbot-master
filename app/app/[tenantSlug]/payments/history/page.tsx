@@ -15,6 +15,7 @@ import {
 } from '@/components/ui';
 import { getPayments, getVNDTransactions } from '@/lib/api/payments';
 import type { PaymentStatus } from '@/lib/api/types';
+import { isPaginationMeta } from '@/lib/api/types';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface PaymentHistoryPageProps {
@@ -45,7 +46,7 @@ export default function PaymentHistoryPage({ params }: PaymentHistoryPageProps) 
 
 
   const payments = paymentsData?.data || [];
-  const paymentsMeta = paymentsData?.meta;
+  const paymentsMeta = paymentsData?.meta && isPaginationMeta(paymentsData.meta) ? paymentsData.meta : null;
   const transactions = transactionsData?.data?.transactions || [];
   const transactionsMeta = transactionsData?.data;
 

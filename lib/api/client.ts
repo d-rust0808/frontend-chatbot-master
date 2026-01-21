@@ -4,7 +4,8 @@
   type AxiosRequestConfig,
   type InternalAxiosRequestConfig,
 } from 'axios';
-import type { ApiError, ApiResponse } from './types';
+import type { ApiError, ApiErrorResponse, ApiResponse } from './types';
+import { ApiErrorException } from './types';
 
 const API_BASE_URL = 'https://cchatbot.pro';
 const API_PREFIX = '/api/v1';
@@ -53,10 +54,49 @@ class ApiClient {
       (error) => Promise.reject(error)
     );
 
-    // Response interceptor - Handle 401 and refresh token
+    // Response interceptor - Handle new format and 401 refresh token
     this.client.interceptors.response.use(
-      (response) => response,
-      async (error: AxiosError<ApiError>) => {
+      (response) => {
+        // Backend trả về format mới (2024): { status, message, data, api_version, provider, meta? }
+        // Note: Field order changed but object key access remains the same
+        
+        // Kiểm tra response.data có tồn tại và là object
+        if (!response.data || typeof response.data !== 'object') {
+          // Fallback: trả về response như cũ (backward compatibility)
+          return response;
+        }
+
+        const responseData = response.data as ApiResponse<unknown> | ApiErrorResponse;
+
+        // Kiểm tra nếu là error response (có error field và status >= 400)
+        if (
+          'error' in responseData &&
+          'status' in responseData &&
+          typeof responseData.status === 'number' &&
+          responseData.status >= 400
+        ) {
+          // Convert to ApiErrorException và reject
+          throw ApiErrorException.fromResponse(responseData as ApiErrorResponse);
+        }
+
+        // Kiểm tra status trong response body (không chỉ HTTP status code)
+        if ('status' in responseData && typeof responseData.status === 'number') {
+          if (responseData.status >= 200 && responseData.status < 300) {
+            // Success - tạo plain object copy để đảm bảo serialization an toàn
+            // Spread responseData để tạo shallow copy, đảm bảo không có non-serializable properties
+            const plainData = { ...responseData } as ApiResponse<unknown>;
+            // Giữ nguyên axios response structure nhưng với plain data
+            return Object.assign(response, { data: plainData });
+          } else {
+            // Error status trong body - convert to ApiErrorException
+            throw ApiErrorException.fromResponse(responseData as ApiErrorResponse);
+          }
+        }
+
+        // Fallback: trả về response như cũ (backward compatibility)
+        return response;
+      },
+      async (error: AxiosError<ApiErrorResponse | ApiError>) => {
         const originalRequest = error.config as InternalAxiosRequestConfig & {
           _retry?: boolean;
         };
@@ -78,6 +118,17 @@ class ApiClient {
               window.location.href = '/login';
             }
             return Promise.reject(refreshError);
+          }
+        }
+
+        // Handle error response với format mới
+        if (error.response?.data) {
+          const errorData = error.response.data;
+          // Check if it's new format
+          if ('error' in errorData && 'status' in errorData) {
+            return Promise.reject(
+              ApiErrorException.fromResponse(errorData as ApiErrorResponse)
+            );
           }
         }
 
@@ -132,14 +183,25 @@ class ApiClient {
 
     this.refreshTokenPromise = (async () => {
       try {
+        // Note: Using axios.post directly (bypasses interceptor) to avoid infinite loop
+        // Backend returns new format: { status, message, data, api_version, provider }
         const response = await axios.post<ApiResponse<{ accessToken: string }>>(
           `${API_BASE_URL}${API_PREFIX}/auth/refresh`,
           { refreshToken }
         );
 
-        const newAccessToken = response.data.data.accessToken;
-        this.setAccessToken(newAccessToken);
-        return newAccessToken;
+        const responseData = response.data;
+        
+        // Check status in response body (new format)
+        if (responseData.status >= 200 && responseData.status < 300) {
+          const newAccessToken = responseData.data.accessToken;
+          this.setAccessToken(newAccessToken);
+          return newAccessToken;
+        } else {
+          // Error status - clear tokens and return null
+          this.clearTokens();
+          return null;
+        }
       } catch (error) {
         this.clearTokens();
         return null;

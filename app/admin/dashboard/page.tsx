@@ -1,51 +1,66 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getAdminStats } from '@/lib/api/admin';
+import { getAdminDashboardStats, getUsers } from '@/lib/api/admin';
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from '@/components/ui';
-import { Users, Building2, Bot, MessageSquare, Activity } from 'lucide-react';
+import { Users, Building2, Bot, MessageSquare, Activity, Package, CreditCard, Database } from 'lucide-react';
 
 export default function AdminDashboardPage() {
-  const { data: statsData, isLoading } = useQuery({
-    queryKey: ['admin', 'stats'],
-    queryFn: () => getAdminStats(),
+  // Try to get admin stats, but handle 403 gracefully
+  const { data: statsData, isLoading: isLoadingStats, error: statsError } = useQuery({
+    queryKey: ['admin', 'dashboard-stats'],
+    queryFn: () => getAdminDashboardStats(),
+    retry: false,
+  });
+
+  // Get users count as fallback
+  const { data: usersData } = useQuery({
+    queryKey: ['admin', 'users', { page: 1, limit: 1 }],
+    queryFn: () => getUsers({ page: 1, limit: 1 }),
+    retry: false,
   });
 
   const stats = statsData?.data;
+  const hasStats = stats && !statsError;
+
+  // Get total users from users query if available
+  const totalUsers = usersData?.meta && 'total' in usersData.meta 
+    ? usersData.meta.total 
+    : usersData?.data?.length || 0;
 
   const statCards = [
     {
       title: 'Total Users',
-      value: stats?.users.total || 0,
+      value: hasStats ? (stats?.users?.total || 0) : totalUsers,
       icon: Users,
       description: 'Registered users',
     },
     {
       title: 'Total Tenants',
-      value: stats?.tenants.total || 0,
+      value: hasStats ? (stats?.tenants?.total || 0) : '-',
       icon: Building2,
       description: 'Active tenants',
     },
     {
       title: 'Total Chatbots',
-      value: stats?.chatbots.total || 0,
+      value: hasStats ? (stats?.chatbots?.total || 0) : '-',
       icon: Bot,
       description: 'All chatbots',
     },
     {
       title: 'Active Conversations',
-      value: stats?.conversations.total || 0,
+      value: hasStats ? (stats?.conversations?.total || 0) : '-',
       icon: MessageSquare,
       description: 'Ongoing conversations',
     },
     {
       title: 'Platform Connections',
-      value: stats?.platformConnections.active || 0,
+      value: hasStats ? (stats?.platformConnections?.active || 0) : '-',
       icon: Activity,
       description: 'Active connections',
     },
@@ -60,7 +75,7 @@ export default function AdminDashboardPage() {
         </p>
       </div>
 
-      {isLoading ? (
+      {isLoadingStats ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3, 4, 5].map((i) => (
             <Card key={i} className="animate-pulse">
@@ -97,16 +112,74 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Activity</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Activity feed coming soon...
-          </p>
-        </CardContent>
-      </Card>
+      {statsError && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardHeader>
+            <CardTitle className="text-amber-900">Stats Unavailable</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-amber-700">
+              Statistics API is not available. Some metrics may be limited.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Quick Actions</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <a
+              href="/admin/users"
+              className="flex items-center gap-2 rounded-lg border p-3 transition hover:bg-gray-50"
+            >
+              <Users className="h-5 w-5 text-primary" />
+              <span className="font-medium">Manage Users</span>
+            </a>
+            <a
+              href="/admin/tenants"
+              className="flex items-center gap-2 rounded-lg border p-3 transition hover:bg-gray-50"
+            >
+              <Building2 className="h-5 w-5 text-primary" />
+              <span className="font-medium">Manage Tenants</span>
+            </a>
+            <a
+              href="/admin/service-packages"
+              className="flex items-center gap-2 rounded-lg border p-3 transition hover:bg-gray-50"
+            >
+              <Package className="h-5 w-5 text-primary" />
+              <span className="font-medium">Service Packages</span>
+            </a>
+            <a
+              href="/admin/payments"
+              className="flex items-center gap-2 rounded-lg border p-3 transition hover:bg-gray-50"
+            >
+              <CreditCard className="h-5 w-5 text-primary" />
+              <span className="font-medium">Payments</span>
+            </a>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>System Information</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Role:</span>
+                <span className="font-medium">Admin</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Access Level:</span>
+                <span className="font-medium">Tenant Management</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

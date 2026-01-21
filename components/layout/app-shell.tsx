@@ -108,15 +108,22 @@ export function AppShell({ children, tenantSlug }: AppShellProps) {
   useEffect(() => {
     // Only update wallet if we have tenantId (meaning balances are from API/WebSocket)
     // This prevents overwriting wallet from sessionStorage with default {vnd: 0, credit: 0}
-    if (tenantId && (balances.vnd > 0 || balances.credit > 0 || wallet === null)) {
+    if (tenantId) {
       const updatedWallet: WalletType = {
         vndBalance: balances.vnd,
         creditBalance: balances.credit,
       };
-      setWallet(updatedWallet);
-      sessionStorage.setItem('wallet', JSON.stringify(updatedWallet));
+      // Only update if wallet is null or balances have actually changed
+      if (
+        wallet === null ||
+        wallet.vndBalance !== updatedWallet.vndBalance ||
+        wallet.creditBalance !== updatedWallet.creditBalance
+      ) {
+        setWallet(updatedWallet);
+        sessionStorage.setItem('wallet', JSON.stringify(updatedWallet));
+      }
     }
-  }, [balances, tenantId, wallet]);
+  }, [balances.vnd, balances.credit, tenantId]); // Remove wallet from dependencies to prevent loop
 
   const handleLogout = () => {
     sessionStorage.clear();

@@ -23,13 +23,13 @@ export interface GetAdminServicePackagesParams {
 export async function getAdminServicePackages(
   params?: GetAdminServicePackagesParams
 ): Promise<ApiResponse<ServicePackage[]>> {
-  return apiClient.get('/admin/service-packages', params ? { params } : undefined);
+  return apiClient.get('/sp-admin/service-packages', params ? { params } : undefined);
 }
 
 export async function getAdminServicePackageById(
   id: string
 ): Promise<ApiResponse<ServicePackage>> {
-  return apiClient.get(`/admin/service-packages/${id}`);
+  return apiClient.get(`/sp-admin/service-packages/${id}`);
 }
 
 export async function createAdminServicePackage(
@@ -57,7 +57,7 @@ export async function createAdminServicePackage(
   }
 
   // Don't set Content-Type header manually - axios will set it automatically with boundary
-  return apiClient.post('/admin/service-packages', formData);
+  return apiClient.post('/sp-admin/service-packages', formData);
 }
 
 export async function updateAdminServicePackage(
@@ -95,16 +95,17 @@ export async function updateAdminServicePackage(
   }
 
   // Don't set Content-Type header manually - axios will set it automatically with boundary
-  return apiClient.put(`/admin/service-packages/${id}`, formData);
+  return apiClient.put(`/sp-admin/service-packages/${id}`, formData);
 }
 
 export async function deleteAdminServicePackage(
   id: string
 ): Promise<ApiResponse<{ message: string }>> {
-  return apiClient.delete(`/admin/service-packages/${id}`);
+  return apiClient.delete(`/sp-admin/service-packages/${id}`);
 }
 
 // ---------- Tenant Admin Endpoints ----------
+// Base URL: /api/v1/admin/service-packages
 
 export interface GetServicePackagesParams {
   service?: ServicePlatform;
@@ -113,39 +114,39 @@ export interface GetServicePackagesParams {
 export async function getServicePackages(
   params?: GetServicePackagesParams
 ): Promise<ApiResponse<ServicePackageListItem[]>> {
-  return apiClient.get('/service-packages', params ? { params } : undefined);
+  return apiClient.get('/admin/service-packages', params ? { params } : undefined);
 }
 
 export async function purchaseServicePackage(
   packageId: string,
   body: PurchaseServicePackageRequest
 ): Promise<ApiResponse<PurchaseServicePackageResponse>> {
-  return apiClient.post(`/service-packages/${packageId}/purchase`, body);
+  return apiClient.post(`/admin/service-packages/${packageId}/purchase`, body);
 }
 
 export async function getServicePackageSubscriptions(): Promise<
   ApiResponse<ServicePackageSubscription[]>
 > {
-  return apiClient.get('/service-packages/subscriptions');
+  return apiClient.get('/admin/service-packages/subscriptions');
 }
 
 export async function getMyServiceSubscriptions(): Promise<
   ApiResponse<ServicePackageSubscriptionSummary[]>
 > {
-  return apiClient.get('/service-packages/my-subscriptions');
+  return apiClient.get('/admin/service-packages/my-subscriptions');
 }
 
 export async function checkServicePackage(
   service: ServicePlatform
 ): Promise<ApiResponse<CheckServicePackageResponse>> {
-  return apiClient.get(`/service-packages/check/${service}`);
+  return apiClient.get(`/admin/service-packages/check/${service}`);
 }
 
 export async function cancelServicePackageSubscription(
   subscriptionId: string
 ): Promise<ApiResponse<{ message: string }>> {
   return apiClient.post(
-    `/service-packages/subscriptions/${subscriptionId}/cancel`
+    `/admin/service-packages/subscriptions/${subscriptionId}/cancel`
   );
 }
 

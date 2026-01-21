@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 import { AlertProvider } from '@/components/alert-provider';
 import { LoadingProvider } from '@/components/loading-provider';
+import { ConfirmDialogProvider } from '@/components/confirm-dialog-provider';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -21,7 +22,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <LoadingProvider>
-        <AlertProvider>{children}</AlertProvider>
+        <AlertProvider>
+          <ConfirmDialogProvider>{children}</ConfirmDialogProvider>
+        </AlertProvider>
       </LoadingProvider>
     </QueryClientProvider>
   );

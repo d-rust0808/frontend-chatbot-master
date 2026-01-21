@@ -36,22 +36,64 @@ type LoginFormData = z.infer<typeof loginSchema>;
   const mutation = useMutation({
     mutationFn: login,
     onSuccess: (response) => {
-      const { accessToken, refreshToken, user, tenants, wallet } = response.data;
+      const { accessToken, refreshToken, user, tenants, wallet, subscriptions } = response.data;
+      // Clear old session data trước khi set mới để tránh conflict
+      // QUAN TRỌNG: Phải clear userRole cũ để tránh conflict với role mới
+      sessionStorage.removeItem('tenantSlug');
+      sessionStorage.removeItem('tenantId');
+      sessionStorage.removeItem('lastTenantSlug');
+      sessionStorage.removeItem('userRole'); // Clear role cũ trước
+      sessionStorage.removeItem('userId'); // Clear userId cũ
+      sessionStorage.removeItem('wallet'); // Clear wallet cũ
+      sessionStorage.removeItem('subscriptions'); // Clear subscriptions cũ
       
-      // Store tokens
+      // Store tokens và user data
       sessionStorage.setItem('accessToken', accessToken);
       sessionStorage.setItem('refreshToken', refreshToken);
-      if (user?.role) {
-        sessionStorage.setItem('userRole', user.role);
+      
+      // Store user role - QUAN TRỌNG: Phải set role trước khi redirect
+      const role: SystemRole | null = (user?.role as SystemRole) || null;
+      if (role) {
+        sessionStorage.setItem('userRole', role);
+      }
+      
+      if (user?.id) {
+        sessionStorage.setItem('userId', user.id);
       }
       if (wallet) {
         sessionStorage.setItem('wallet', JSON.stringify(wallet));
       }
+      // Store subscriptions để hiển thị trong sidebar
+      if (subscriptions && subscriptions.length > 0) {
+        sessionStorage.setItem('subscriptions', JSON.stringify(subscriptions));
+      }
 
-      // Route based on role: sp-admin goes to admin; others go tenant flow using tenants from backend
-      const role: SystemRole | null = (user?.role as SystemRole) || null;
+      // Route based on role: sp-admin goes to sp-admin dashboard; admin goes to admin dashboard; others go tenant flow using tenants from backend
+      // QUAN TRỌNG: Check role từ response.data.user.role (biến `role`), KHÔNG check sessionStorage
+      // Verify role đã được set trong sessionStorage trước khi redirect
+      const verifyRole = sessionStorage.getItem('userRole');
+      
       if (role === 'sp-admin') {
-        router.push('/admin/dashboard');
+        // Verify và redirect
+        if (verifyRole === 'sp-admin') {
+          window.location.href = '/sp-admin/dashboard';
+        } else {
+          // Retry sau 50ms nếu role chưa được set (tránh race condition)
+          setTimeout(() => {
+            window.location.href = '/sp-admin/dashboard';
+          }, 50);
+        }
+      } else if (role === 'admin') {
+        // Đảm bảo redirect đến admin dashboard, KHÔNG phải sp-admin
+        // Verify role đã được set
+        if (verifyRole === 'admin') {
+          window.location.href = '/admin/dashboard';
+        } else {
+          // Retry sau 50ms nếu role chưa được set (tránh race condition)
+          setTimeout(() => {
+            window.location.href = '/admin/dashboard';
+          }, 50);
+        }
       } else {
         const tenantList: TenantMembership[] = tenants || [];
         if (tenantList.length === 1) {
